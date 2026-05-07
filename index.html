@@ -1,12 +1,14 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Market Insights Weekly Archive</title>
+    <title>Market Insights Archive (GitHub)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script>
-        const LOCAL_STORAGE_KEY = 'market_insights_archive_data';
+        const DATA_FILE_URL = 'data.csv'; // This must match the file name in your GitHub repo
+        const LOCAL_STORAGE_KEY = 'market_insights_local_override';
         let newsData = [];
         let activeTags = new Set();
         let activeRegions = new Set();
@@ -31,102 +33,75 @@
 
         const DEFAULT_COLOR = { label: "text-gray-600 bg-gray-50 border-gray-100", accent: "border-l-gray-300", glow: "after:bg-gray-400/5" };
 
-        function loadData() {
+        async function loadData() {
             const subtitle = document.getElementById('archiveSubtitle');
             try {
-                // Fetch data from browser's local storage instead of Firebase
+                // 1. Try to fetch the CSV file hosted on GitHub
+                const response = await fetch(DATA_FILE_URL);
+                if (response.ok) {
+                    const csvText = await response.text();
+                    parseAndSetData(csvText, "GitHub Cloud");
+                } else {
+                    throw new Error("CSV file not found in repository");
+                }
+            } catch (error) {
+                console.warn("GitHub CSV fetch failed, checking local storage...", error);
                 const storedData = localStorage.getItem(LOCAL_STORAGE_KEY);
                 if (storedData) {
                     newsData = JSON.parse(storedData);
-                    // Sort by date descending
-                    newsData.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    processAndRender("Local Cache");
                 } else {
-                    newsData = [];
+                    if (subtitle) subtitle.textContent = "No data found. Please upload a 'data.csv' to your GitHub repo.";
+                    hideLoader();
                 }
-
-                if (subtitle) {
-                    subtitle.className = "text-emerald-600 font-medium transition-colors";
-                    subtitle.textContent = `Local Mode • ${newsData.length} records saved`;
-                }
-                
-                hideLoader();
-                renderFilters();
-                renderFeed();
-            } catch (error) {
-                console.error("Failed to load local data:", error);
-                if (subtitle) subtitle.textContent = "Error loading local data.";
-                hideLoader();
             }
         }
 
-        function hideLoader() {
-            const overlay = document.getElementById('loadingOverlay');
-            if (overlay) overlay.classList.add('hidden');
-        }
-
-        function handleFileUpload(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            document.getElementById('loadingOverlay').classList.remove('hidden');
-            
-            Papa.parse(file, {
+        function parseAndSetData(csvString, sourceLabel) {
+            Papa.parse(csvString, {
                 header: true,
                 skipEmptyLines: true,
                 complete: function(results) {
-                    try {
-                        const newRecords = [];
-                        results.data.forEach(row => {
-                            const dateStr = row.Date || '';
-                            let isoDate = dateStr;
-                            if (dateStr.includes('/')) {
-                                const parts = dateStr.split('/');
-                                if (parts.length === 3) isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                            }
-                            const title = row.Topic || row.Title || row.topic || row.title;
-                            const points = row.Points || row.points || row.Content || '';
-                            const hashtags = row.Hashtags || row.hashtags || row.Tags || '';
-                            const link = row.Link || row.Links || row.link || row.links || '';
-                            
-                            if (!title) return;
-                            
-                            // Generate a unique ID based on title and date to prevent exact duplicates
-                            const docId = btoa(unescape(encodeURIComponent(title + isoDate))).substring(0, 30).replace(/[/+=]/g, '');
-                            
-                            newRecords.push({
-                                id: docId,
-                                date: isoDate,
-                                displayDate: dateStr,
-                                region: row.Region || 'Global',
-                                title: title,
-                                links: link.split(',').map(l => l.trim()).filter(l => l),
-                                rawPoints: points,
-                                hashtags: hashtags.split(',').map(h => h.trim().replace(/^#/, '')).filter(h => h),
-                                updatedAt: Date.now()
-                            });
-                        });
-
-                        // Merge new records with existing ones (avoiding duplicates)
-                        const existingIds = new Set(newsData.map(item => item.id));
-                        newRecords.forEach(record => {
-                            if (!existingIds.has(record.id)) {
-                                newsData.push(record);
-                            }
-                        });
-
-                        // Save updated array back to local storage
-                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(newsData));
-                        
-                        // Reload view
-                        loadData();
-                    } catch (err) { 
-                        console.error("Sync failed:", err); 
-                    } finally { 
-                        hideLoader(); 
-                        // Reset file input
-                        document.getElementById('csvFileInput').value = '';
-                    }
+                    newsData = results.data.map(row => {
+                        const dateStr = row.Date || '';
+                        let isoDate = dateStr;
+                        if (dateStr.includes('/')) {
+                            const parts = dateStr.split('/');
+                            if (parts.length === 3) isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+                        }
+                        const title = row.Topic || row.Title || row.topic || row.title;
+                        return {
+                            id: btoa(unescape(encodeURIComponent(title + isoDate))).substring(0, 30),
+                            date: isoDate,
+                            displayDate: dateStr,
+                            region: row.Region || 'Global',
+                            title: title,
+                            links: (row.Link || row.Links || '').split(',').map(l => l.trim()).filter(l => l),
+                            rawPoints: row.Points || row.Content || '',
+                            hashtags: (row.Hashtags || row.Tags || '').split(',').map(h => h.trim().replace(/^#/, '')).filter(h => h)
+                        };
+                    });
+                    
+                    // Sort by date descending
+                    newsData.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    processAndRender(sourceLabel);
                 }
             });
+        }
+
+        function processAndRender(sourceLabel) {
+            const subtitle = document.getElementById('archiveSubtitle');
+            if (subtitle) {
+                subtitle.className = "text-emerald-600 font-medium";
+                subtitle.textContent = `${sourceLabel} • ${newsData.length} records`;
+            }
+            hideLoader();
+            renderFilters();
+            renderFeed();
+        }
+
+        function hideLoader() {
+            document.getElementById('loadingOverlay').classList.add('hidden');
         }
 
         function renderFilters() {
@@ -138,8 +113,7 @@
             const allRegions = uniqueRegions.sort((a, b) => {
                 const indexA = REGION_ORDER.indexOf(a);
                 const indexB = REGION_ORDER.indexOf(b);
-                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                return indexA !== -1 ? -1 : 1;
+                return (indexA !== -1 ? indexA : 99) - (indexB !== -1 ? indexB : 99);
             });
 
             const tagCloud = document.getElementById('tagCloud');
@@ -191,7 +165,7 @@
         function parseBold(text) { return text.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900">$1</strong>'); }
 
         function renderFullContent(rawText) {
-            let text = rawText.replace(/\\n/g, '\n');
+            let text = (rawText || '').replace(/\\n/g, '\n');
             const lines = text.split('\n').map(l => l.trim()).filter(l => l);
             let finalHtml = '', inTable = false, tableHtml = '';
 
@@ -244,14 +218,12 @@
             filtered.forEach(item => {
                 const div = document.createElement('div');
                 const colors = REGION_COLORS[item.region] || DEFAULT_COLOR;
-                div.className = `relative overflow-hidden bg-white p-6 rounded-xl border border-gray-100 border-l-4 ${colors.accent} shadow-sm hover:shadow-md transition-all group`;
-                const flare = `<div class="absolute -right-20 -top-20 w-64 h-64 rounded-full blur-3xl pointer-events-none transition-opacity opacity-0 group-hover:opacity-100 ${colors.glow.replace('after:', '')}"></div>`;
-                div.innerHTML = `${flare}<div class="relative z-10"><div class="flex justify-between items-start mb-3"><span class="text-[10px] font-black uppercase tracking-widest ${colors.label} px-2 py-1 rounded border shadow-sm">${item.region}</span><span class="text-xs text-gray-400 font-mono">${item.displayDate}</span></div><div class="flex flex-col md:flex-row justify-between items-start mb-4 gap-4"><h2 class="text-lg font-bold text-slate-800 leading-tight group-hover:text-black transition-colors">${item.title}</h2><div class="flex flex-wrap gap-1.5 shrink-0">${(item.links || []).map(url => `<a href="${url}" target="_blank" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`).join('')}</div></div><div class="space-y-1 mb-6">${renderFullContent(item.rawPoints)}</div><div class="flex flex-wrap gap-2 pt-4 border-t border-gray-50">${item.hashtags.map(t => `<span class="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded">#${t}</span>`).join('')}</div></div>`;
+                div.className = `relative overflow-hidden bg-white p-6 rounded-xl border border-gray-100 border-l-4 ${colors.accent} shadow-sm hover:shadow-md transition-all group mb-6`;
+                div.innerHTML = `<div class="relative z-10"><div class="flex justify-between items-start mb-3"><span class="text-[10px] font-black uppercase tracking-widest ${colors.label} px-2 py-1 rounded border shadow-sm">${item.region}</span><span class="text-xs text-gray-400 font-mono">${item.displayDate}</span></div><div class="flex flex-col md:flex-row justify-between items-start mb-4 gap-4"><h2 class="text-lg font-bold text-slate-800 leading-tight group-hover:text-black transition-colors">${item.title}</h2><div class="flex flex-wrap gap-1.5 shrink-0">${(item.links || []).map(url => `<a href="${url}" target="_blank" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-2 rounded transition-colors"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>`).join('')}</div></div><div class="space-y-1 mb-6">${renderFullContent(item.rawPoints)}</div><div class="flex flex-wrap gap-2 pt-4 border-t border-gray-50">${item.hashtags.map(t => `<span class="text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded">#${t}</span>`).join('')}</div></div>`;
                 feed.appendChild(div);
             });
         }
 
-        window.handleFileUpload = handleFileUpload;
         window.triggerSearch = () => {
             renderFeed();
             setTimeout(() => {
@@ -260,126 +232,34 @@
             }, 100);
         };
 
-        window.exportToCSV = () => {
-            const csv = Papa.unparse(newsData.map(i => ({ Date: i.displayDate, Region: i.region, Topic: i.title, Points: i.rawPoints, Hashtags: i.hashtags.join(', '), Links: i.links.join(', ') })));
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = 'Market_Insights_Archive.csv'; a.click();
-        };
-
-        window.openDeleteModal = () => {
-            document.getElementById('passwordModal').classList.remove('hidden');
-            setTimeout(() => {
-                const content = document.getElementById('passwordModalContent');
-                content.classList.remove('scale-95', 'opacity-0'); content.classList.add('scale-100', 'opacity-100');
-                document.getElementById('deletePasswordInput').focus();
-            }, 10);
-        };
-
-        window.closeDeleteModal = () => {
-            const content = document.getElementById('passwordModalContent');
-            content.classList.add('scale-95', 'opacity-0'); content.classList.remove('scale-100', 'opacity-100');
-            setTimeout(() => { document.getElementById('passwordModal').classList.add('hidden'); document.getElementById('deletePasswordInput').value = ''; document.getElementById('passwordError').classList.add('hidden'); }, 200);
-        };
-
-        window.confirmDeleteAll = () => {
-            if (document.getElementById('deletePasswordInput').value === "smmi") {
-                closeDeleteModal(); 
-                document.getElementById('loadingOverlay').classList.remove('hidden');
-                
-                // Clear local storage and array
-                localStorage.removeItem(LOCAL_STORAGE_KEY);
-                newsData = [];
-                
-                setTimeout(() => {
-                    loadData(); // Re-render
-                    document.getElementById('loadingOverlay').classList.add('hidden');
-                }, 500); // Small delay for visual feedback
-            } else { 
-                document.getElementById('passwordError').classList.remove('hidden'); 
-            }
-        };
-
         window.onload = () => {
-            // Load local data instead of Firebase Auth
             loadData();
-
             document.getElementById('searchInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') triggerSearch(); });
-            document.getElementById('deletePasswordInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') confirmDeleteAll(); });
             ['dateFrom', 'dateTo'].forEach(id => document.getElementById(id).addEventListener('change', renderFeed));
-            
-            window.addEventListener('click', (e) => {
-                const menu = document.getElementById('adminMenu'), btn = document.getElementById('adminToggleBtn');
-                if (menu && !menu.contains(e.target) && !btn.contains(e.target)) menu.classList.add('hidden');
-            });
         };
-
-        window.toggleAdminMenu = () => document.getElementById('adminMenu').classList.toggle('hidden');
-        window.forceView = hideLoader;
     </script>
     <style>
         .tag-active { background-color: #2563eb !important; color: white !important; border-color: #2563eb !important; }
         .region-tag-active { background-color: #059669 !important; color: white !important; border-color: #059669 !important; }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        #adminMenu { animation: slideUp 0.2s ease-out; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans text-gray-900 pb-20 relative">
+<body class="bg-gray-50 min-h-screen font-sans text-gray-900 pb-20">
     <div id="loadingOverlay" class="fixed inset-0 bg-white/95 backdrop-blur-md z-50 flex flex-col items-center justify-center text-center px-6">
         <div class="loader mb-6"></div>
         <p class="text-slate-800 font-bold text-lg mb-1">Market Insights Weekly Archive</p>
-        <p class="text-slate-400 text-sm mb-6 max-w-xs">Loading local dataset...</p>
-        <button onclick="forceView()" class="bg-white border border-gray-200 text-gray-600 px-6 py-2 rounded-full text-xs font-bold hover:bg-gray-50 transition-all shadow-sm">
-            Proceed to Dashboard
-        </button>
-    </div>
-
-    <div class="fixed bottom-8 right-8 z-40 flex items-center gap-3">
-        <div class="relative">
-            <div id="adminMenu" class="hidden absolute bottom-16 right-0 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden mb-2">
-                <label class="flex items-center gap-2 w-full px-4 py-3 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer border-b border-gray-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                    Sync CSV
-                    <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
-                </label>
-                <button onclick="exportToCSV()" class="flex items-center gap-2 w-full px-4 py-3 text-sm text-gray-500 hover:bg-gray-50 border-b border-gray-50 bg-gray-50/50">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    Export Archive
-                </button>
-                <button onclick="openDeleteModal()" class="flex items-center gap-2 w-full px-4 py-3 text-sm text-gray-400 hover:bg-gray-50 opacity-60">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    Delete Records
-                </button>
-            </div>
-            <button id="adminToggleBtn" onclick="toggleAdminMenu()" class="bg-gray-200 text-gray-500 px-4 py-2 rounded-full text-xs font-bold shadow-sm hover:bg-gray-300 opacity-60 hover:opacity-100 flex items-center gap-2 border border-gray-300">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                Admin
-            </button>
-        </div>
-        <a href="mailto:bedco.cn.chan@hkjc.org.hk" target="_blank" rel="noopener noreferrer" class="bg-blue-600 hover:bg-blue-700 text-white w-12 h-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110 active:scale-95">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1-2-2h14a2 2 0 0 1 2 2z"></path><path d="M8 9h8"></path><path d="M8 13h6"></path></svg>
-        </a>
-    </div>
-
-    <div id="passwordModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center">
-        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all scale-95 opacity-0" id="passwordModalContent">
-            <h3 class="text-lg font-bold text-slate-800 mb-2">Delete Records</h3>
-            <input type="password" id="deletePasswordInput" placeholder="Enter password" class="w-full px-4 py-2 border border-gray-200 rounded-lg mb-2 focus:ring-2 focus:ring-red-500 outline-none">
-            <p id="passwordError" class="text-red-500 text-xs font-bold hidden mb-4">Incorrect password.</p>
-            <div class="flex justify-end gap-2 mt-4">
-                <button onclick="closeDeleteModal()" class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg font-bold">Cancel</button>
-                <button onclick="confirmDeleteAll()" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold">Delete All</button>
-            </div>
-        </div>
+        <p class="text-slate-400 text-sm mb-6 max-w-xs">Connecting to repository data...</p>
     </div>
 
     <div class="max-w-6xl mx-auto p-4 md:p-8">
         <header class="mb-4 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-4">
             <div>
                 <h1 class="text-3xl font-bold text-slate-800">Market Insights Weekly Archive</h1>
-                <p class="text-gray-400 text-sm" id="archiveSubtitle">Loading Local Data...</p>
+                <p class="text-gray-400 text-sm" id="archiveSubtitle">Loading...</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <p class="text-[10px] text-gray-400 bg-gray-100 px-3 py-1 rounded-full border">GitHub Mode</p>
             </div>
         </header>
 
@@ -413,7 +293,7 @@
             </div>
         </div>
 
-        <div id="newsFeed" class="grid gap-6 scroll-mt-6"></div>
+        <div id="newsFeed"></div>
         <div id="emptyState" class="hidden text-center py-20 text-gray-400">No entries match your criteria.</div>
     </div>
 </body>
