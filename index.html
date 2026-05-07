@@ -3,143 +3,200 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Market Insights Dashboard</title>
+  <title>Market Insights Weekly Archive</title>
 
   <!-- Tailwind CSS -->
   https://cdn.tailwindcss.com
 
-  <!-- PapaParse for CSV -->
+  <!-- PapaParse -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+  <style>
+    .tag-active { background:#2563eb; color:#fff; border-color:#2563eb }
+    .region-active { background:#059669; color:#fff; border-color:#059669 }
+  </style>
 </head>
-<body class="bg-gray-50 min-h-screen font-sans">
+<body class="bg-gray-50 text-gray-900 min-h-screen">
 
-<div class="max-w-6xl mx-auto p-6">
-  <h1 class="text-3xl font-bold mb-6">Market Insights Dashboard</h1>
+<!-- Loader -->
+<div id="loader" class="fixed inset-0 bg-white/90 backdrop-blur z-50 flex items-center justify-center hidden">
+  <div class="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full"></div>
+</div>
 
-  <!-- Upload & Actions -->
-  <div class="mb-6 bg-white p-4 rounded-xl shadow flex flex-wrap gap-3">
-    <input type="file" id="fileInput" accept=".csv" />
-    <button onclick="exportCSV()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Export CSV</button>
-    <button onclick="clearData()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">Delete All</button>
-  </div>
+<div class="max-w-7xl mx-auto p-6">
 
-  <!-- Search -->
-  <div class="mb-6 bg-white p-4 rounded-xl shadow">
-    <input id="searchInput" placeholder="Search keyword..." class="w-full px-4 py-2 border rounded" />
+  <!-- Header -->
+  <header class="mb-6 border-b pb-4">
+    <h1 class="text-3xl font-bold text-slate-800">Market Insights Weekly Archive</h1>
+    <p id="subtitle" class="text-gray-500 text-sm"></p>
+  </header>
+
+  <!-- Controls -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 mb-6 space-y-6">
+
+    <!-- Search -->
+    <div class="flex gap-2">
+      <input id="searchInput" placeholder="Search…" class="flex-1 px-4 py-2.5 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 outline-none" />
+      <button onclick="renderFeed()" class="bg-slate-800 hover:bg-black text-white px-6 py-2.5 rounded-lg font-bold">Search</button>
+    </div>
+
+    <!-- Filters -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 pt-4 border-t border-gray-50">
+
+      <!-- Regions -->
+      <div class="md:col-span-4 md:border-r border-gray-50 pr-4">
+        <h3 class="text-xs font-bold uppercase text-gray-400 mb-4">Regions</h3>
+        <div id="regionCloud" class="flex flex-wrap gap-2"></div>
+      </div>
+
+      <!-- Topics -->
+      <div class="md:col-span-8 pl-0 md:pl-4">
+        <h3 class="text-xs font-bold uppercase text-gray-400 mb-4">Thematic Topics</h3>
+        <div id="tagCloud" class="space-y-4"></div>
+      </div>
+
+    </div>
   </div>
 
   <!-- Feed -->
-  <div id="feed" class="grid gap-4"></div>
+  <div id="feed" class="grid gap-6"></div>
+  <div id="empty" class="hidden text-center py-20 text-gray-400">No entries match your criteria.</div>
+
 </div>
 
 <script>
-// =============================
-// Local "Database"
-// =============================
-let data = JSON.parse(localStorage.getItem('marketInsights') || '[]');
+// =====================
+// State & Data
+// =====================
+let newsData = JSON.parse(localStorage.getItem('marketInsights') || '[]');
+let activeRegions = new Set();
+let activeTags = new Set();
 
-function saveData() {
-  localStorage.setItem('marketInsights', JSON.stringify(data));
+const THEME_MAP = {
+  "Politics & Policy": ["Geopolitics","China-US Relations","Tariff","NPC","Policy","Politics"],
+  "Economy & Market": ["Economy","Tourism","Consumer","Workforce","RMB"],
+  "Sports & Betting": ["Sports","Racing","Football","NBA","World Cup","Gaming"],
+  "Technology & Innovation": ["AI","Fintech","Technology","Stablecoins"],
+};
+
+function save(){ localStorage.setItem('marketInsights', JSON.stringify(newsData)); }
+
+// =====================
+// CSV Upload
+// =====================
+function loadCSV(file){
+  if(!file) return;
+  showLoader(true);
+  Papa.parse(file,{header:true,skipEmptyLines:true,complete:res=>{
+    res.data.forEach(r=>{
+      if(!r.Title && !r.Topic) return;
+      newsData.push({
+        date:r.Date||'',
+        region:r.Region||'Global',
+        title:r.Title||r.Topic,
+        content:r.Points||r.Content||'',
+        tags:(r.Hashtags||'').split(',').map(t=>t.trim()).filter(Boolean)
+      });
+    });
+    save();
+    renderAll();
+    showLoader(false);
+  }});
 }
 
-// =============================
-// Render
-// =============================
-function render() {
-  const q = document.getElementById('searchInput').value.toLowerCase();
-  const feed = document.getElementById('feed');
+// =====================
+// Filters
+// =====================
+function renderFilters(){
+  const regionCloud=document.getElementById('regionCloud');
+  const tagCloud=document.getElementById('tagCloud');
+  regionCloud.innerHTML=''; tagCloud.innerHTML='';
 
-  const filtered = data.filter(i =>
-    i.title.toLowerCase().includes(q) ||
-    i.points.toLowerCase().includes(q)
-  );
+  [...new Set(newsData.map(d=>d.region))].forEach(r=>{
+    const b=document.createElement('button');
+    b.textContent=r;
+    b.className=`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${activeRegions.has(r)?'region-active':'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`;
+    b.onclick=()=>{toggle(activeRegions,r);renderAll()};
+    regionCloud.appendChild(b);
+  });
 
-  feed.innerHTML = '';
+  const allTags=[...new Set(newsData.flatMap(d=>d.tags))];
+  const used=new Set();
 
-  if (filtered.length === 0) {
-    feed.innerHTML = '<p class="text-gray-400 text-center">No records</p>';
-    return;
+  Object.entries(THEME_MAP).forEach(([theme,keys])=>{
+    const matched=allTags.filter(t=>keys.some(k=>k.toLowerCase()===t.toLowerCase()));
+    if(!matched.length) return;
+    matched.forEach(t=>used.add(t));
+    const block=document.createElement('div');
+    block.innerHTML=`<h4 class='text-[10px] font-bold text-gray-400 uppercase mb-2'>${theme}</h4>`;
+    const row=document.createElement('div'); row.className='flex flex-wrap gap-2';
+    matched.forEach(t=>row.appendChild(tagBtn(t)));
+    block.appendChild(row); tagCloud.appendChild(block);
+  });
+
+  const rest=allTags.filter(t=>!used.has(t));
+  if(rest.length){
+    const block=document.createElement('div');
+    block.innerHTML=`<h4 class='text-[10px] font-bold text-gray-400 uppercase mb-2'>Others</h4>`;
+    const row=document.createElement('div'); row.className='flex flex-wrap gap-2';
+    rest.forEach(t=>row.appendChild(tagBtn(t)));
+    block.appendChild(row); tagCloud.appendChild(block);
   }
+}
 
-  filtered.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'bg-white p-5 rounded-xl shadow border border-gray-100';
+function tagBtn(t){
+  const b=document.createElement('button');
+  b.textContent='#'+t;
+  b.className=`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${activeTags.has(t)?'tag-active':'bg-white text-gray-500 border-gray-200 hover:border-gray-300'}`;
+  b.onclick=()=>{toggle(activeTags,t);renderAll()};
+  return b;
+}
 
-    div.innerHTML = `
-      <div class="text-xs text-gray-400 mb-1">${item.date} • ${item.region}</div>
-      <h2 class="font-bold text-lg mb-2">${item.title}</h2>
-      <p class="text-gray-600 mb-3">${item.points}</p>
-      <div class="text-xs text-blue-500">${item.tags.map(t => '#' + t).join(' ')}</div>
-    `;
+function toggle(set,val){ set.has(val)?set.delete(val):set.add(val) }
 
+// =====================
+// Feed
+// =====================
+function renderFeed(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  const feed=document.getElementById('feed');
+  const empty=document.getElementById('empty');
+  feed.innerHTML='';
+
+  const filtered=newsData.filter(d=>{
+    if(q && !(d.title+d.content).toLowerCase().includes(q)) return false;
+    if(activeRegions.size && !activeRegions.has(d.region)) return false;
+    if(activeTags.size && !d.tags.some(t=>activeTags.has(t))) return false;
+    return true;
+  });
+
+  document.getElementById('subtitle').textContent=`${filtered.length} records`;
+
+  if(!filtered.length){ empty.classList.remove('hidden'); return }
+  empty.classList.add('hidden');
+
+  filtered.forEach(d=>{
+    const div=document.createElement('div');
+    div.className='relative bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all';
+    div.innerHTML=`
+      <div class='flex justify-between items-start mb-3'>
+        <span class='text-[10px] font-black uppercase tracking-widest text-gray-500 bg-gray-50 px-2 py-1 rounded border'>${d.region}</span>
+        <span class='text-xs text-gray-400 font-mono'>${d.date}</span>
+      </div>
+      <h2 class='text-lg font-bold text-slate-800 mb-4'>${d.title}</h2>
+      <p class='text-sm text-gray-600 mb-6 leading-relaxed'>${d.content}</p>
+      <div class='flex flex-wrap gap-2'>${d.tags.map(t=>`<span class='text-[11px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded'>#${t}</span>`).join('')}</div>`;
     feed.appendChild(div);
   });
 }
 
-// =============================
-// CSV Upload
-// =============================
-document.getElementById('fileInput').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
+// =====================
+// Helpers
+// =====================
+function showLoader(v){ document.getElementById('loader').classList.toggle('hidden',!v) }
+function renderAll(){ renderFilters(); renderFeed() }
 
-  Papa.parse(file, {
-    header: true,
-    skipEmptyLines: true,
-    complete: results => {
-      results.data.forEach(row => {
-        if (!row.Title && !row.Topic) return;
-
-        data.push({
-          date: row.Date || '',
-          region: row.Region || 'Global',
-          title: row.Title || row.Topic,
-          points: row.Points || row.Content || '',
-          tags: (row.Hashtags || row.Tags || '').split(',').map(t => t.trim()).filter(Boolean)
-        });
-      });
-
-      saveData();
-      render();
-    }
-  });
-});
-
-// =============================
-// Export CSV
-// =============================
-function exportCSV() {
-  const csv = Papa.unparse(data.map(d => ({
-    Date: d.date,
-    Region: d.region,
-    Title: d.title,
-    Points: d.points,
-    Hashtags: d.tags.join(', ')
-  })));
-
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'Market_Insights.csv';
-  a.click();
-}
-
-// =============================
-// Clear Data
-// =============================
-function clearData() {
-  if (!confirm('Delete all records?')) return;
-  data = [];
-  saveData();
-  render();
-}
-
-// Live search
-document.getElementById('searchInput').addEventListener('input', render);
-
-render();
+renderAll();
 </script>
 
 </body>
