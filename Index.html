@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Market Insights Dashboard</title>
+
+  <!-- Tailwind CSS -->
+  https://cdn.tailwindcss.com
+
+  <!-- PapaParse for CSV -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+
+<div class="max-w-6xl mx-auto p-6">
+  <h1 class="text-3xl font-bold mb-6">Market Insights Dashboard</h1>
+
+  <!-- Upload & Actions -->
+  <div class="mb-6 bg-white p-4 rounded-xl shadow flex flex-wrap gap-3">
+    <input type="file" id="fileInput" accept=".csv" />
+    <button onclick="exportCSV()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">Export CSV</button>
+    <button onclick="clearData()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded">Delete All</button>
+  </div>
+
+  <!-- Search -->
+  <div class="mb-6 bg-white p-4 rounded-xl shadow">
+    <input id="searchInput" placeholder="Search keyword..." class="w-full px-4 py-2 border rounded" />
+  </div>
+
+  <!-- Feed -->
+  <div id="feed" class="grid gap-4"></div>
+</div>
+
+<script>
+// =============================
+// Local "Database"
+// =============================
+let data = JSON.parse(localStorage.getItem('marketInsights') || '[]');
+
+function saveData() {
+  localStorage.setItem('marketInsights', JSON.stringify(data));
+}
+
+// =============================
+// Render
+// =============================
+function render() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const feed = document.getElementById('feed');
+
+  const filtered = data.filter(i =>
+    i.title.toLowerCase().includes(q) ||
+    i.points.toLowerCase().includes(q)
+  );
+
+  feed.innerHTML = '';
+
+  if (filtered.length === 0) {
+    feed.innerHTML = '<p class="text-gray-400 text-center">No records</p>';
+    return;
+  }
+
+  filtered.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'bg-white p-5 rounded-xl shadow border border-gray-100';
+
+    div.innerHTML = `
+      <div class="text-xs text-gray-400 mb-1">${item.date} • ${item.region}</div>
+      <h2 class="font-bold text-lg mb-2">${item.title}</h2>
+      <p class="text-gray-600 mb-3">${item.points}</p>
+      <div class="text-xs text-blue-500">${item.tags.map(t => '#' + t).join(' ')}</div>
+    `;
+
+    feed.appendChild(div);
+  });
+}
+
+// =============================
+// CSV Upload
+// =============================
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: results => {
+      results.data.forEach(row => {
+        if (!row.Title && !row.Topic) return;
+
+        data.push({
+          date: row.Date || '',
+          region: row.Region || 'Global',
+          title: row.Title || row.Topic,
+          points: row.Points || row.Content || '',
+          tags: (row.Hashtags || row.Tags || '').split(',').map(t => t.trim()).filter(Boolean)
+        });
+      });
+
+      saveData();
+      render();
+    }
+  });
+});
+
+// =============================
+// Export CSV
+// =============================
+function exportCSV() {
+  const csv = Papa.unparse(data.map(d => ({
+    Date: d.date,
+    Region: d.region,
+    Title: d.title,
+    Points: d.points,
+    Hashtags: d.tags.join(', ')
+  })));
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Market_Insights.csv';
+  a.click();
+}
+
+// =============================
+// Clear Data
+// =============================
+function clearData() {
+  if (!confirm('Delete all records?')) return;
+  data = [];
+  saveData();
+  render();
+}
+
+// Live search
+document.getElementById('searchInput').addEventListener('input', render);
+
+render();
+</script>
+
+</body>
+</html>
