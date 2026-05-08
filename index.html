@@ -299,21 +299,13 @@
     
     <!-- ==================== FLOATING SUPPORT BUTTON ==================== -->
     <button onclick="openSupportEmail()" 
-        class="fixed bottom-6 right-6 w-14 h-14 bg-[#1e3a8a] hover:bg-[#1e40af] text-white rounded-2xl shadow-xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 overflow-hidden border border-white/20">
-        
-        !-- Avatar Icon -->
-        <svg width="42" height="42" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect width="200" height="200" fill="#1e3a8a"/>
-            <!-- Head & Hair -->
-            <path d="M100 45 Q65 45 55 75 Q55 95 70 105 Q65 125 80 135 Q85 155 100 155 Q115 155 120 135 Q135 125 130 105 Q145 95 145 75 Q135 45 100 45Z" fill="#f8fafc"/>
-            <!-- Glasses -->
-            <rect x="65" y="88" width="70" height="22" rx="4" fill="none" stroke="#1e3a8a" stroke-width="12"/>
-            <circle cx="82" cy="99" r="8" fill="none" stroke="#1e3a8a" stroke-width="8"/>
-            <circle cx="118" cy="99" r="8" fill="none" stroke="#1e3a8a" stroke-width="8"/>
-            <!-- Ear -->
-            <path d="M52 95 Q45 95 45 105 Q47 115 52 115" fill="none" stroke="#f8fafc" stroke-width="18" stroke-linejoin="round"/>
-        </svg>
+        class="fixed bottom-6 right-6 w-14 h-14 bg-[#1e3a8a] hover:bg-[#1e40af] rounded-2xl shadow-xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 overflow-hidden border border-white/30">
+    
+    <img src="icon.png" 
+         alt="Support" 
+         class="w-10 h-10 object-contain">
     </button>
+    
     <script>
     function openSupportEmail() {
         const email = "bedco.cn.chan@hkjc.org.hk";
