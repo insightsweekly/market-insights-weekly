@@ -320,9 +320,32 @@
             window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}`, '_blank');
         }
 
+    <!-- ==================== FLOATING SUPPORT BUTTON ==================== -->
+    <button onclick="openSupportEmail()" 
+            class="fixed bottom-6 right-6 w-14 h-14 bg-[#1e3a8a] hover:bg-[#1e40af] rounded-2xl shadow-xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 z-50 overflow-hidden border border-white/30">
+        <img src="icon.png" 
+             alt="Support" 
+             class="w-10 h-10 object-contain">
+    </button>
+
+    <!-- Traffic Counter -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2 text-center text-xs text-gray-400 z-40">
+        <div class="max-w-6xl mx-auto px-6 flex justify-center items-center gap-2">
+            <span>👥 Visitors Today:</span>
+            <span id="visitorCount" class="font-mono font-semibold text-gray-600">0</span>
+        </div>
+    </div>
+
+    <script>
+        function openSupportEmail() {
+            const email = "bedco.cn.chan@hkjc.org.hk";
+            const subject = "Market Insights Weekly Support";
+            window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}`, '_blank');
+        }
+
         function initVisitorCounter() {
             const countEl = document.getElementById('visitorCount');
-            let count = parseInt(localStorage.getItem('marketInsightsVisitors') || '0');
+            let count = parseInt(localStorage.getItem('marketInsightsVisitors') || '20');
            
             // Increment on each page load
             count++;
@@ -335,6 +358,9 @@
         window.addEventListener('load', () => {
             initVisitorCounter();
         });
+    </script>
+</body>
+</html>
     </script>
 </body>
 </html>
