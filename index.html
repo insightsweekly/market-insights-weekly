@@ -159,7 +159,7 @@
                 container.appendChild(list); tagCloud.appendChild(container);
             };
 
-            ["Politics & Policy", "Economy & Market", "Sports & Betting", "Technology & Innovation", "Others"].forEach(theme => renderGroup(theme, groupedTags[theme]));
+            ["TOP Search", "Economy & Market", "Politics & Policy", "Other Sports & Entertainment", "Technology & Innovation", "Others"].forEach(theme => renderGroup(theme, groupedTags[theme]));
             if (uncategorized.length > 0) renderGroup("Miscellaneous", uncategorized);
         }
 
