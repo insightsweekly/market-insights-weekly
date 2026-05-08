@@ -319,7 +319,22 @@
         const email = "bedco.cn.chan@hkjc.org.hk";
         const subject = "Market Insights Weekly Support";
         window.open(`mailto:${email}?subject=${encodeURIComponent(subject)}`, '_blank');
+    
+    function initVisitorCounter() {
+        const countEl = document.getElementById('visitorCount');
+        let count = parseInt(localStorage.getItem('marketInsightsVisitors') || '0');
+        
+        // Increment on each page load
+        count++;
+        localStorage.setItem('marketInsightsVisitors', count);
+        
+        countEl.textContent = count.toLocaleString();
     }
+
+    // Initialize when page loads
+    window.addEventListener('load', () => {
+        initVisitorCounter();
+    });
     </script>
 </body>
 </html>
